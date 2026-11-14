@@ -52,6 +52,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: Отчёты — сборка ${{ github.run_number }}
+          name: Отчёт.xlsx — сборка ${{ github.run_number }}
           files: Otchety.apk
           make_latest: true

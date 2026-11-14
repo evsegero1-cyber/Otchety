@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Отчёты</title>
+<title>Отчёт.xlsx</title>
 <script src="xlsx.full.min.js"></script>
 <style>
   * { box-sizing: border-box; }
@@ -57,7 +57,7 @@
 </head>
 <body>
   <div class="bar">
-    <div class="name" id="fname">Отчёты</div>
+    <div class="name" id="fname">Отчёт.xlsx</div>
     <button class="icon" id="closeBtn" onclick="closeDoc()">✕ Закрыть</button>
     <button onclick="openFile()">Открыть</button>
     <button class="icon" id="shareBtn" onclick="shareImage()" title="Отправить картинкой">📤</button>
@@ -100,7 +100,7 @@
     wb = null; table = null;
     wrap.innerHTML = EMPTY;
     document.getElementById('tabs').innerHTML = '';
-    document.getElementById('fname').textContent = 'Отчёты';
+    document.getElementById('fname').textContent = 'Отчёт.xlsx';
     document.getElementById('photoBtn').style.visibility = 'hidden';
     document.getElementById('closeBtn').style.display = 'none';
     document.getElementById('shareBtn').style.display = 'none';
