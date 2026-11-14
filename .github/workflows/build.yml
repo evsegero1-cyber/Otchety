@@ -1,0 +1,57 @@
+name: Сборка APK
+
+on:
+  workflow_dispatch:
+  push:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Поиск проекта (папка или загруженный zip-архив)
+        run: |
+          if [ ! -f settings.gradle ]; then
+            for f in *.zip; do [ -f "$f" ] && unzip -q -o "$f" -d _app; done
+          fi
+          CFG=$(find . -name settings.gradle -not -path "*/build/*" | head -1)
+          if [ -z "$CFG" ]; then echo "Не найден проект. Загрузите в репозиторий файл otchety.zip"; exit 1; fi
+          echo "PROJ=$(realpath "$(dirname "$CFG")")" >> "$GITHUB_ENV"
+          echo "Проект: $(dirname "$CFG")"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Лицензии Android SDK
+        run: |
+          SDKM=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | head -1)
+          yes | "$SDKM" --licenses > /dev/null || true
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Сборка APK
+        run: |
+          cd "$PROJ"
+          gradle assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/Otchety.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Otchety-apk
+          path: Otchety.apk
+
+      - name: Публикация (скачать APK можно со страницы Releases)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Отчёты — сборка ${{ github.run_number }}
+          files: Otchety.apk
+          make_latest: true

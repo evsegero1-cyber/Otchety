@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Белая таблица-сетка на зелёном фоне -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M32,34h44a2,2 0,0 1,2 2v36a2,2 0,0 1,-2 2h-44a2,2 0,0 1,-2 -2v-36a2,2 0,0 1,2 -2z" />
+    <path android:fillColor="#1E7145"
+        android:pathData="M34,44h40v2h-40z M34,54h40v2h-40z M34,64h40v2h-40z M46,38h2v34h-2z M60,38h2v34h-2z" />
+</vector>

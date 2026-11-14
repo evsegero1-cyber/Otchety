@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Отчёты</title>
+<script src="xlsx.full.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #fff; font-family: Roboto, Arial, sans-serif; overflow: hidden; }
+  body { display: flex; flex-direction: column; }
+
+  .bar { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #1E7145; color: #fff; }
+  .bar .name { flex: 1; min-width: 0; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar button { flex: none; border: 0; border-radius: 8px; padding: 9px 12px; font-size: 14px; font-weight: 600;
+                background: rgba(255,255,255,.18); color: #fff; }
+  .bar button.main { background: #fff; color: #1E7145; }
+  .bar button:active { opacity: .7; }
+
+  #wrap { flex: 1; overflow: auto; position: relative; background: #fff; -webkit-overflow-scrolling: touch; }
+  #empty { padding: 40px 24px; text-align: center; color: #555; font-size: 16px; line-height: 1.5; }
+  #empty button { margin-top: 18px; border: 0; border-radius: 10px; padding: 14px 22px; font-size: 16px; font-weight: 600; background: #1E7145; color: #fff; }
+
+  table { border-collapse: separate; border-spacing: 0; table-layout: auto; font-size: 12px; color: #000; background: #fff; }
+  td { border-right: 1px solid #c8c8c8; border-bottom: 1px solid #c8c8c8; padding: 2px 4px; height: 19px;
+       white-space: nowrap; background: #fff; }
+  tr:first-child td { border-top: 1px solid #c8c8c8; }
+  td:first-child { border-left: 1px solid #c8c8c8; }
+  td.n { text-align: right; }
+  td.c { text-align: center; }
+  td.stk { position: sticky; left: 0; z-index: 2; box-shadow: 1px 0 0 #9a9a9a; }
+  tr.total td { font-weight: 700; background: #f2f2f2; }
+
+  .tabs { flex: none; display: flex; overflow-x: auto; background: #f1f1f1; border-top: 1px solid #ddd; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs button { flex: none; border: 0; background: transparent; padding: 13px 16px; font-size: 15px; color: #333;
+                 border-right: 1px solid #ddd; white-space: nowrap; }
+  .tabs button.on { background: #fff; color: #E0442B; font-weight: 700; }
+
+  /* Режим «фото»: только отчёт, без кнопок */
+  body.photo .bar, body.photo .tabs { display: none; }
+  body.photo #wrap { position: fixed; inset: 0; }
+
+  #hint { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: rgba(0,0,0,.72); color: #fff;
+          padding: 9px 16px; border-radius: 20px; font-size: 13px; pointer-events: none; opacity: 0; transition: opacity .4s; z-index: 10;
+          white-space: nowrap; }
+  #hint.show { opacity: 1; }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <div class="name" id="fname">Отчёты</div>
+    <button onclick="openFile()">Открыть</button>
+    <button class="main" id="photoBtn" onclick="enterPhoto()">⛶ Фото</button>
+  </div>
+  <div id="wrap"><div id="empty">
+    Скачай отчёт и открой его через это приложение<br>или нажми кнопку ниже.<br>
+    <button onclick="openFile()">Выбрать Excel-файл</button>
+  </div></div>
+  <div class="tabs" id="tabs"></div>
+  <div id="hint"></div>
+
+<script>
+(function () {
+  var wb = null, sheetIdx = 0, table = null, scale = 1, normalScale = 1, photo = false, fitMode = 'width';
+  var wrap = document.getElementById('wrap');
+  var hasAndroid = typeof Android !== 'undefined';
+
+  function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+  window.openFile = function () { if (hasAndroid) Android.openPicker(); };
+
+  window.onFileReady = function () {
+    if (!hasAndroid) return;
+    var b64 = Android.getFile();
+    if (!b64) { showEmpty(); return; }
+    openWorkbook(b64, 'base64', Android.getFileName());
+  };
+
+  // для проверки в обычном браузере
+  window.openWorkbook = openWorkbook;
+
+  function showEmpty() {
+    document.getElementById('photoBtn').style.visibility = 'hidden';
+  }
+
+  function openWorkbook(data, type, name) {
+    try {
+      wb = XLSX.read(data, { type: type, cellStyles: true, cellDates: true });
+    } catch (e) {
+      wrap.innerHTML = '<div id="empty">Не получилось прочитать файл.<br>' + esc(e.message || e) +
+        '<br><button onclick="openFile()">Выбрать другой файл</button></div>';
+      return;
+    }
+    document.getElementById('fname').textContent = name || 'Отчёт';
+    document.getElementById('photoBtn').style.visibility = 'visible';
+    // открываем тот же лист, что смотрели в прошлый раз
+    var last = load('sheet'), idx = -1;
+    var visible = visibleSheets();
+    for (var i = 0; i < visible.length; i++) if (wb.SheetNames[visible[i]] === last) idx = visible[i];
+    if (idx < 0) idx = visible.length ? visible[0] : 0;
+    buildTabs();
+    showSheet(idx);
+  }
+
+  function visibleSheets() {
+    var res = [], meta = (wb.Workbook && wb.Workbook.Sheets) || [];
+    for (var i = 0; i < wb.SheetNames.length; i++) if (!(meta[i] && meta[i].Hidden)) res.push(i);
+    return res;
+  }
+
+  function buildTabs() {
+    var tabs = document.getElementById('tabs');
+    tabs.innerHTML = '';
+    visibleSheets().forEach(function (i) {
+      var b = document.createElement('button');
+      b.textContent = wb.SheetNames[i];
+      b.dataset.idx = i;
+      b.onclick = function () { showSheet(i); store('sheet', wb.SheetNames[i]); };
+      tabs.appendChild(b);
+    });
+  }
+
+  function showSheet(i) {
+    sheetIdx = i;
+    var btns = document.querySelectorAll('.tabs button');
+    for (var k = 0; k < btns.length; k++) {
+      var on = +btns[k].dataset.idx === i;
+      btns[k].className = on ? 'on' : '';
+      if (on) btns[k].scrollIntoView({ inline: 'center', block: 'nearest' });
+    }
+    wrap.innerHTML = renderSheet(wb.Sheets[wb.SheetNames[i]]);
+    table = wrap.querySelector('table');
+    wrap.scrollTop = 0; wrap.scrollLeft = 0;
+    scale = 1; normalScale = 1;
+    if (photo) fit(); else setScale(1);
+  }
+
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+  function cellText(c) {
+    if (!c) return '';
+    if (c.t === 'd' && c.v instanceof Date) {
+      var d = c.v, s = pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + d.getFullYear();
+      if (c.z && /h/i.test(c.z)) s += ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+      return s;
+    }
+    var w = c.w != null ? c.w : (c.v != null ? String(c.v) : '');
+    if (c.t === 'n') {
+      // американский формат 3,988.68 → русский 3 988,68
+      w = w.replace(/,/g, ' ').replace(/\./g, ',');
+    }
+    if (c.t === 'e') w = c.w || '#ОШИБКА';
+    return w;
+  }
+
+  function renderSheet(ws) {
+    if (!ws || !ws['!ref']) return '<div id="empty">Лист пустой</div>';
+    var R = XLSX.utils.decode_range(ws['!ref']);
+    var cols = ws['!cols'] || [], rows = ws['!rows'] || [];
+    var minR = Infinity, maxR = -1, minC = Infinity, maxC = -1, r, c;
+
+    // границы по реально заполненным ячейкам
+    for (r = R.s.r; r <= R.e.r; r++) for (c = R.s.c; c <= R.e.c; c++) {
+      var cell = ws[XLSX.utils.encode_cell({ r: r, c: c })];
+      if (cell && cellText(cell) !== '') {
+        if (r < minR) minR = r; if (r > maxR) maxR = r;
+        if (c < minC) minC = c; if (c > maxC) maxC = c;
+      }
+    }
+    if (maxR < 0) return '<div id="empty">Лист пустой</div>';
+
+    var visC = [], visR = [];
+    for (c = minC; c <= maxC; c++) if (!(cols[c] && cols[c].hidden)) visC.push(c);
+    for (r = minR; r <= maxR; r++) if (!(rows[r] && rows[r].hidden)) visR.push(r);
+
+    // объединённые ячейки
+    var mergeStart = {}, covered = {};
+    (ws['!merges'] || []).forEach(function (m) {
+      var cs = 0, rs = 0, x;
+      for (x = m.s.c; x <= m.e.c; x++) if (visC.indexOf(x) >= 0) cs++;
+      for (x = m.s.r; x <= m.e.r; x++) if (visR.indexOf(x) >= 0) rs++;
+      mergeStart[m.s.r + ':' + m.s.c] = { cs: Math.max(cs, 1), rs: Math.max(rs, 1) };
+      for (var rr = m.s.r; rr <= m.e.r; rr++) for (var cc = m.s.c; cc <= m.e.c; cc++)
+        if (rr !== m.s.r || cc !== m.s.c) covered[rr + ':' + cc] = true;
+    });
+
+    // столбец с ФИО — закрепляем слева: среди первых трёх столбцов тот, где больше всего текста
+    var stick = -1, best = 0;
+    visC.slice(0, 3).forEach(function (cc) {
+      var cnt = 0;
+      visR.forEach(function (rr) {
+        var x = ws[XLSX.utils.encode_cell({ r: rr, c: cc })];
+        if (x && x.t === 's' && String(x.v).trim().length > 3) cnt++;
+      });
+      if (cnt > best) { best = cnt; stick = cc; }
+    });
+
+    var html = '<table><colgroup>';
+    visC.forEach(function (cc) {
+      var col = cols[cc] || {}, w = col.wpx || (col.wch ? Math.round(col.wch * 7 + 5) : (col.width ? Math.round(col.width * 7 + 5) : 70));
+      html += '<col style="width:' + Math.max(w, 24) + 'px">';
+    });
+    html += '</colgroup>';
+
+    visR.forEach(function (rr) {
+      var rowH = rows[rr] && rows[rr].hpx ? ' style="height:' + Math.round(rows[rr].hpx) + 'px"' : '';
+      var first = ws[XLSX.utils.encode_cell({ r: rr, c: stick >= 0 ? stick : visC[0] })];
+      var isTotal = first && /итог/i.test(String(first.v));
+      html += '<tr' + (isTotal ? ' class="total"' : '') + rowH + '>';
+      visC.forEach(function (cc) {
+        var key = rr + ':' + cc;
+        if (covered[key]) return;
+        var cell = ws[XLSX.utils.encode_cell({ r: rr, c: cc })];
+        var cls = [];
+        if (cell && (cell.t === 'n' || cell.t === 'd')) cls.push('n');
+        if (cc === stick) cls.push('stk');
+        var span = '';
+        if (mergeStart[key]) {
+          if (mergeStart[key].cs > 1) span += ' colspan="' + mergeStart[key].cs + '"';
+          if (mergeStart[key].rs > 1) span += ' rowspan="' + mergeStart[key].rs + '"';
+          if (mergeStart[key].cs > 1) cls.push('c');
+        }
+        html += '<td' + (cls.length ? ' class="' + cls.join(' ') + '"' : '') + span + '>' + esc(cellText(cell)) + '</td>';
+      });
+      html += '</tr>';
+    });
+    return html + '</table>';
+  }
+
+  // ---------- масштаб ----------
+  function naturalSize() {
+    var old = table.style.zoom;
+    table.style.zoom = 1;
+    var rc = table.getBoundingClientRect();
+    table.style.zoom = old;
+    return { w: rc.width, h: rc.height };
+  }
+
+  function setScale(s) {
+    scale = s;
+    if (table) table.style.zoom = s;
+  }
+
+  function fit() {
+    if (!table) return;
+    var n = naturalSize(), W = wrap.clientWidth, H = wrap.clientHeight;
+    var s = W / n.w;
+    if (fitMode === 'all') s = Math.min(W / n.w, H / n.h);
+    setScale(Math.min(s, 2.5));
+    // текст масштабируется не идеально ровно — подправляем по факту
+    for (var k = 0; k < 3 && s < 2.5; k++) {
+      var rc = table.getBoundingClientRect();
+      var f = W / rc.width;
+      if (fitMode === 'all') f = Math.min(f, H / rc.height);
+      if (f >= 1 && f < 1.01) break;
+      s = s * f * 0.995;
+      setScale(Math.min(s, 2.5));
+    }
+    wrap.scrollLeft = 0; wrap.scrollTop = 0;
+  }
+
+  function minScale() {
+    if (!table) return 0.2;
+    var n = naturalSize();
+    return Math.min(1, Math.min(wrap.clientWidth / n.w, wrap.clientHeight / n.h)) * 0.9;
+  }
+
+  // щипок двумя пальцами
+  var pinch = null, lastTap = 0;
+  function dist(t) { var dx = t[0].clientX - t[1].clientX, dy = t[0].clientY - t[1].clientY; return Math.sqrt(dx * dx + dy * dy); }
+  function mid(t) {
+    var rc = wrap.getBoundingClientRect();
+    return { x: (t[0].clientX + t[1].clientX) / 2 - rc.left, y: (t[0].clientY + t[1].clientY) / 2 - rc.top };
+  }
+
+  wrap.addEventListener('touchstart', function (e) {
+    if (!table) return;
+    if (e.touches.length === 2) {
+      var m = mid(e.touches);
+      pinch = { d: dist(e.touches), s: scale, px: (wrap.scrollLeft + m.x) / scale, py: (wrap.scrollTop + m.y) / scale, min: minScale() };
+      e.preventDefault();
+    } else if (e.touches.length === 1 && photo) {
+      var now = Date.now();
+      if (now - lastTap < 300) {           // двойной тап — весь отчёт / по ширине
+        fitMode = fitMode === 'width' ? 'all' : 'width';
+        fit();
+        hint(fitMode === 'all' ? 'Весь отчёт целиком' : 'По ширине экрана');
+        lastTap = 0;
+        e.preventDefault();
+      } else lastTap = now;
+    }
+  }, { passive: false });
+
+  wrap.addEventListener('touchmove', function (e) {
+    if (!pinch || e.touches.length !== 2) return;
+    e.preventDefault();
+    var s = pinch.s * dist(e.touches) / pinch.d;
+    s = Math.max(pinch.min, Math.min(5, s));
+    var m = mid(e.touches);
+    setScale(s);
+    wrap.scrollLeft = pinch.px * s - m.x;
+    wrap.scrollTop = pinch.py * s - m.y;
+  }, { passive: false });
+
+  wrap.addEventListener('touchend', function (e) {
+    if (e.touches.length < 2) pinch = null;
+  });
+
+  // ---------- режим «фото» ----------
+  var hintTimer;
+  function hint(text) {
+    var h = document.getElementById('hint');
+    h.textContent = text;
+    h.className = 'show';
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(function () { h.className = ''; }, 2200);
+  }
+
+  window.enterPhoto = function () {
+    if (!table || photo) return;
+    photo = true;
+    normalScale = scale;
+    fitMode = 'width';
+    document.body.classList.add('photo');
+    if (hasAndroid) Android.setFullscreen(true);
+    fit();
+    setTimeout(fit, 350);   // после того как спрячутся системные панели
+    hint('Двойной тап — весь отчёт • «Назад» — выйти');
+  };
+
+  function exitPhoto() {
+    photo = false;
+    document.body.classList.remove('photo');
+    if (hasAndroid) Android.setFullscreen(false);
+    setScale(normalScale);
+  }
+
+  // вызывается кнопкой «Назад» телефона
+  window.onBack = function () {
+    if (photo) { exitPhoto(); return true; }
+    return false;
+  };
+
+  var resizeTimer;
+  window.addEventListener('resize', function () {
+    if (!photo) return;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(fit, 150);
+  });
+
+  // файл подгружает приложение (MainActivity) после загрузки страницы
+  showEmpty();
+})();
+</script>
+</body>
+</html>
