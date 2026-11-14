@@ -413,13 +413,18 @@
 
     var tr = tbl.getBoundingClientRect();
     var pad = 8, W = Math.ceil(tr.width) + pad * 2, H = Math.ceil(tr.height) + pad * 2;
-    // Telegram ужимает фото до 2560 точек по большей стороне — делаем ровно столько
-    var k = Math.min(3, 2560 / Math.max(W, H));
+    // Картинка в форме экрана телефона, повёрнутого в альбомный вид (но не боком).
+    // Ширина 2560 — максимум, который Telegram оставляет без ужатия.
+    var sw = screen.width || 0, sh = screen.height || 0;
+    var aspect = (sw && sh) ? Math.max(sw, sh) / Math.min(sw, sh) : 2.2;
+    var FW = 2560, FH = Math.round(FW / aspect);
+    var k = Math.min(FW / W, FH / H);
     var cv = document.createElement('canvas');
-    cv.width = Math.round(W * k); cv.height = Math.round(H * k);
+    cv.width = FW; cv.height = FH;
     var ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, FW, FH);
+    ctx.translate((FW - W * k) / 2, (FH - H * k) / 2);
     ctx.scale(k, k);
-    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
     ctx.textBaseline = 'middle';
 
     var cells = tbl.querySelectorAll('td');
