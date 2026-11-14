@@ -41,6 +41,12 @@
   body.photo .bar, body.photo .tabs { display: none; }
   body.photo #wrap { position: fixed; inset: 0; }
 
+  #closePhoto { display: none; position: fixed; top: 12px; right: 12px; z-index: 11; width: 42px; height: 42px;
+                border: 0; border-radius: 21px; background: rgba(0,0,0,.35); color: #fff; font-size: 20px; line-height: 42px; padding: 0; }
+  #closePhoto:active { background: rgba(0,0,0,.6); }
+  body.photo #closePhoto { display: block; }
+  .bar button.icon { padding: 9px 10px; }
+
   #hint { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: rgba(0,0,0,.72); color: #fff;
           padding: 9px 16px; border-radius: 20px; font-size: 13px; pointer-events: none; opacity: 0; transition: opacity .4s; z-index: 10;
           white-space: nowrap; }
@@ -50,6 +56,7 @@
 <body>
   <div class="bar">
     <div class="name" id="fname">Отчёты</div>
+    <button class="icon" id="closeBtn" onclick="closeDoc()">✕ Закрыть</button>
     <button onclick="openFile()">Открыть</button>
     <button class="main" id="photoBtn" onclick="enterPhoto()">⛶ Фото</button>
   </div>
@@ -59,6 +66,7 @@
   </div></div>
   <div class="tabs" id="tabs"></div>
   <div id="hint"></div>
+  <button id="closePhoto" onclick="onBack()">✕</button>
 
 <script>
 (function () {
@@ -82,9 +90,24 @@
   // для проверки в обычном браузере
   window.openWorkbook = openWorkbook;
 
+  var EMPTY = '<div id="empty">Скачай отчёт и открой его через это приложение<br>или нажми кнопку ниже.<br>' +
+    '<button onclick="openFile()">Выбрать Excel-файл</button></div>';
+
   function showEmpty() {
+    wb = null; table = null;
+    wrap.innerHTML = EMPTY;
+    document.getElementById('tabs').innerHTML = '';
+    document.getElementById('fname').textContent = 'Отчёты';
     document.getElementById('photoBtn').style.visibility = 'hidden';
+    document.getElementById('closeBtn').style.display = 'none';
   }
+
+  // закрыть документ и вернуться на начальный экран
+  window.closeDoc = function () {
+    if (photo) exitPhoto();
+    if (hasAndroid) Android.closeFile();
+    showEmpty();
+  };
 
   function openWorkbook(data, type, name) {
     try {
@@ -96,6 +119,7 @@
     }
     document.getElementById('fname').textContent = name || 'Отчёт';
     document.getElementById('photoBtn').style.visibility = 'visible';
+    document.getElementById('closeBtn').style.display = '';
     // открываем тот же лист, что смотрели в прошлый раз
     var last = load('sheet'), idx = -1;
     var visible = visibleSheets();
@@ -328,12 +352,13 @@
     if (hasAndroid) Android.setFullscreen(true);
     fit();
     setTimeout(fit, 350);   // после того как спрячутся системные панели
-    hint('Двойной тап — весь отчёт • «Назад» — выйти');
+    hint('Двойной тап — весь отчёт • ✕ — выйти');
   };
 
   function exitPhoto() {
     photo = false;
     document.body.classList.remove('photo');
+    clearTimeout(hintTimer); document.getElementById('hint').className = '';
     if (hasAndroid) Android.setFullscreen(false);
     setScale(normalScale);
   }

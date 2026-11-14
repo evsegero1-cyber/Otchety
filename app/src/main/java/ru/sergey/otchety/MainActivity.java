@@ -3,6 +3,7 @@ package ru.sergey.otchety;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ActivityInfo;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
@@ -142,6 +143,10 @@ public class MainActivity extends Activity {
     }
 
     private void applyFullscreen(boolean on) {
+        // «Фото» — всегда альбомная ориентация, при выходе — как было (по датчику)
+        setRequestedOrientation(on
+                ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                : ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);
         if (Build.VERSION.SDK_INT >= 28) {
             WindowManager.LayoutParams lp = getWindow().getAttributes();
             lp.layoutInDisplayCutoutMode = on
@@ -206,6 +211,12 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 return "";
             }
+        }
+
+        @JavascriptInterface
+        public void closeFile() {
+            new File(getFilesDir(), LAST_FILE).delete();
+            prefs.edit().remove("name").apply();
         }
 
         @JavascriptInterface
