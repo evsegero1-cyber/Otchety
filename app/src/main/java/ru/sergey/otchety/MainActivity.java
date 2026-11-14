@@ -215,11 +215,16 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void shareImage(String b64, String title) {
+        public void shareImages(String joined, String caption) {
+            final java.util.ArrayList<Uri> uris = new java.util.ArrayList<>();
             try {
-                byte[] png = Base64.decode(b64, Base64.DEFAULT);
-                try (FileOutputStream out = new FileOutputStream(ShareProvider.shareFile(MainActivity.this))) {
-                    out.write(png);
+                String[] parts = joined.split(",");
+                for (int i = 0; i < parts.length; i++) {
+                    byte[] png = Base64.decode(parts[i], Base64.DEFAULT);
+                    try (FileOutputStream out = new FileOutputStream(ShareProvider.shareFile(MainActivity.this, i + 1))) {
+                        out.write(png);
+                    }
+                    uris.add(ShareProvider.shareUri(i + 1));
                 }
             } catch (Exception e) {
                 runOnUiThread(() -> Toast.makeText(MainActivity.this,
@@ -227,11 +232,19 @@ public class MainActivity extends Activity {
                 return;
             }
             runOnUiThread(() -> {
-                Uri uri = ShareProvider.shareUri();
-                Intent send = new Intent(Intent.ACTION_SEND);
+                Intent send;
+                if (uris.size() == 1) {
+                    send = new Intent(Intent.ACTION_SEND);
+                    send.putExtra(Intent.EXTRA_STREAM, uris.get(0));
+                } else {
+                    send = new Intent(Intent.ACTION_SEND_MULTIPLE);
+                    send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+                }
                 send.setType("image/png");
-                send.putExtra(Intent.EXTRA_STREAM, uri);
-                send.setClipData(ClipData.newRawUri("", uri));
+                send.putExtra(Intent.EXTRA_TEXT, caption);   // подпись «Отчет за …»
+                ClipData clip = ClipData.newRawUri("", uris.get(0));
+                for (int i = 1; i < uris.size(); i++) clip.addItem(new ClipData.Item(uris.get(i)));
+                send.setClipData(clip);
                 send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 try {
                     startActivity(Intent.createChooser(send, "Отправить отчёт"));

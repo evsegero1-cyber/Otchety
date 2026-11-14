@@ -15,22 +15,25 @@ import java.io.FileNotFoundException;
 public class ShareProvider extends ContentProvider {
 
     public static final String AUTHORITY = "ru.sergey.otchety.share";
-    public static final String FILE_NAME = "otchet.png";
+    private static String name(int n) {
+        return "otchet" + n + ".png";
+    }
 
-    public static File shareFile(android.content.Context ctx) {
+    public static File shareFile(android.content.Context ctx, int n) {
         File dir = new File(ctx.getCacheDir(), "share");
         //noinspection ResultOfMethodCallIgnored
         dir.mkdirs();
-        return new File(dir, FILE_NAME);
+        return new File(dir, name(n));
     }
 
-    public static Uri shareUri() {
-        return Uri.parse("content://" + AUTHORITY + "/" + FILE_NAME);
+    public static Uri shareUri(int n) {
+        return Uri.parse("content://" + AUTHORITY + "/" + name(n));
     }
 
     private File fileFor(Uri uri) throws FileNotFoundException {
-        if (!FILE_NAME.equals(uri.getLastPathSegment())) throw new FileNotFoundException(uri.toString());
-        return shareFile(getContext());
+        String last = uri.getLastPathSegment();
+        if (last == null || !last.matches("otchet[0-9]{1,2}\\.png")) throw new FileNotFoundException(uri.toString());
+        return new File(new File(getContext().getCacheDir(), "share"), last);
     }
 
     @Override
@@ -47,7 +50,7 @@ public class ShareProvider extends ContentProvider {
             return null;
         }
         MatrixCursor c = new MatrixCursor(new String[]{OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE});
-        c.addRow(new Object[]{"Отчёт.png", f.length()});
+        c.addRow(new Object[]{f.getName(), f.length()});
         return c;
     }
 
