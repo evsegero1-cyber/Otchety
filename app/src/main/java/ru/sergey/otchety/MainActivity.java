@@ -1,6 +1,7 @@
 package ru.sergey.otchety;
 
 import android.app.Activity;
+import android.content.ClipData;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
@@ -211,6 +212,33 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 return "";
             }
+        }
+
+        @JavascriptInterface
+        public void shareImage(String b64, String title) {
+            try {
+                byte[] png = Base64.decode(b64, Base64.DEFAULT);
+                try (FileOutputStream out = new FileOutputStream(ShareProvider.shareFile(MainActivity.this))) {
+                    out.write(png);
+                }
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(MainActivity.this,
+                        "Не удалось сохранить картинку: " + e.getMessage(), Toast.LENGTH_LONG).show());
+                return;
+            }
+            runOnUiThread(() -> {
+                Uri uri = ShareProvider.shareUri();
+                Intent send = new Intent(Intent.ACTION_SEND);
+                send.setType("image/png");
+                send.putExtra(Intent.EXTRA_STREAM, uri);
+                send.setClipData(ClipData.newRawUri("", uri));
+                send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                try {
+                    startActivity(Intent.createChooser(send, "Отправить отчёт"));
+                } catch (Exception e) {
+                    Toast.makeText(MainActivity.this, "Нет приложения, чтобы отправить", Toast.LENGTH_LONG).show();
+                }
+            });
         }
 
         @JavascriptInterface

@@ -60,6 +60,7 @@
     <div class="name" id="fname">Отчёты</div>
     <button class="icon" id="closeBtn" onclick="closeDoc()">✕ Закрыть</button>
     <button onclick="openFile()">Открыть</button>
+    <button class="icon" id="shareBtn" onclick="shareImage()" title="Отправить картинкой">📤</button>
     <button class="main" id="photoBtn" onclick="enterPhoto()">⛶ Фото</button>
   </div>
   <div id="wrap"><div id="empty">
@@ -102,6 +103,7 @@
     document.getElementById('fname').textContent = 'Отчёты';
     document.getElementById('photoBtn').style.visibility = 'hidden';
     document.getElementById('closeBtn').style.display = 'none';
+    document.getElementById('shareBtn').style.display = 'none';
   }
 
   // закрыть документ и вернуться на начальный экран
@@ -122,6 +124,7 @@
     document.getElementById('fname').textContent = name || 'Отчёт';
     document.getElementById('photoBtn').style.visibility = 'visible';
     document.getElementById('closeBtn').style.display = '';
+    document.getElementById('shareBtn').style.display = '';
     // открываем тот же лист, что смотрели в прошлый раз
     var last = load('sheet'), idx = -1;
     var visible = visibleSheets();
@@ -351,6 +354,65 @@
   });
 
   // ---------- режим «фото» ----------
+  // ---------- «Отправить картинкой» ----------
+  // Рисуем всю таблицу (даже то, что не влезло на экран) на холсте и отдаём приложению
+  function tableToPng() {
+    var holder = document.createElement('div');
+    holder.style.cssText = 'position:absolute;left:-100000px;top:0;';
+    var clone = table.cloneNode(true);
+    clone.style.zoom = 1;
+    var st = clone.querySelectorAll('.stk');
+    for (var i = 0; i < st.length; i++) st[i].classList.remove('stk');
+    holder.appendChild(clone);
+    document.body.appendChild(holder);
+
+    var tr = clone.getBoundingClientRect();
+    var pad = 8, W = Math.ceil(tr.width) + pad * 2, H = Math.ceil(tr.height) + pad * 2;
+    // чёткость: 3× от экранного размера, но не больше ~20 млн точек
+    var k = Math.min(3, Math.sqrt(20000000 / (W * H)), 8000 / W, 8000 / H);
+    var cv = document.createElement('canvas');
+    cv.width = Math.round(W * k); cv.height = Math.round(H * k);
+    var ctx = cv.getContext('2d');
+    ctx.scale(k, k);
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+    ctx.textBaseline = 'middle';
+
+    var cells = clone.querySelectorAll('td');
+    for (var j = 0; j < cells.length; j++) {
+      var td = cells[j], r = td.getBoundingClientRect(), cs = getComputedStyle(td);
+      var x = r.left - tr.left + pad, y = r.top - tr.top + pad, w = r.width, h = r.height;
+      ctx.fillStyle = cs.backgroundColor; ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = '#c8c8c8'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      var text = td.textContent;
+      if (!text) continue;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+      ctx.fillStyle = cs.color;
+      ctx.font = cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+      var al = cs.textAlign, px = parseFloat(cs.paddingLeft) || 4;
+      if (al === 'right') { ctx.textAlign = 'right'; ctx.fillText(text, x + w - px, y + h / 2); }
+      else if (al === 'center') { ctx.textAlign = 'center'; ctx.fillText(text, x + w / 2, y + h / 2); }
+      else { ctx.textAlign = 'left'; ctx.fillText(text, x + px, y + h / 2); }
+      ctx.restore();
+    }
+    document.body.removeChild(holder);
+    return cv.toDataURL('image/png').split(',')[1];
+  }
+
+  window.shareImage = function () {
+    if (!table) return;
+    hint('Готовлю картинку…');
+    setTimeout(function () {
+      try {
+        var b64 = tableToPng();
+        if (hasAndroid) Android.shareImage(b64, wb.SheetNames[sheetIdx]);
+        else window.lastPng = b64;   // для проверки в браузере
+      } catch (e) {
+        hint('Не получилось: ' + (e.message || e));
+      }
+    }, 30);
+  };
+
   var hintTimer;
   function hint(text) {
     var h = document.getElementById('hint');
