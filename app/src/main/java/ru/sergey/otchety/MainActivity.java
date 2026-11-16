@@ -100,15 +100,25 @@ public class MainActivity extends Activity {
     private void loadUri(final Uri uri) {
         io.execute(() -> {
             try {
+                runOnUiThread(() -> web.evaluateJavascript("window.onLoading && window.onLoading()", null));
                 String name = queryName(uri);
-                byte[] data;
-                try (InputStream in = getContentResolver().openInputStream(uri)) {
+                File incoming = new File(getCacheDir(), "incoming.bin");
+                try (InputStream in = getContentResolver().openInputStream(uri);
+                     FileOutputStream out = new FileOutputStream(incoming)) {
                     if (in == null) throw new Exception("Файл не открылся");
-                    data = readAll(in);
+                    byte[] buf = new byte[65536];
+                    int n;
+                    while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
                 }
-                try (FileOutputStream out = new FileOutputStream(new File(getFilesDir(), LAST_FILE))) {
-                    out.write(data);
+                File last = new File(getFilesDir(), LAST_FILE);
+                try {
+                    slimCopy(incoming, last);
+                } catch (Exception notZip) {
+                    // старый формат .xls (не zip) — берём как есть
+                    copyFile(incoming, last);
                 }
+                //noinspection ResultOfMethodCallIgnored
+                incoming.delete();
                 prefs.edit().putString("name", name).apply();
                 runOnUiThread(this::notifyJs);
             } catch (Exception e) {
@@ -118,6 +128,54 @@ public class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+    // Тяжёлые части xlsx, которые не нужны для просмотра: кэши сводных таблиц (десятки МБ),
+    // графики, срезы, настройки печати. Без них файл открывается быстро и не съедает память.
+    private static final String[] SKIP = {
+            "xl/pivotCache/", "xl/pivotTables/", "xl/charts/", "xl/drawings/", "xl/slicers/",
+            "xl/slicerCaches/", "xl/printerSettings/", "xl/calcChain.xml", "xl/media/",
+            "xl/timelines/", "xl/timelineCaches/", "xl/externalLinks/", "xl/worksheets/_rels/",
+            "docProps/thumbnail"};
+
+    private static final String TOO_BIG_SHEET =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+            + "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>"
+            + "<row r=\"1\"><c r=\"A1\" t=\"inlineStr\"><is><t>Этот лист слишком большой для просмотра на телефоне</t></is></c></row>"
+            + "</sheetData></worksheet>";
+
+    private static void slimCopy(File src, File dst) throws Exception {
+        try (java.util.zip.ZipFile zf = new java.util.zip.ZipFile(src);
+             java.util.zip.ZipOutputStream zo = new java.util.zip.ZipOutputStream(new FileOutputStream(dst))) {
+            java.util.Enumeration<? extends java.util.zip.ZipEntry> en = zf.entries();
+            byte[] buf = new byte[65536];
+            while (en.hasMoreElements()) {
+                java.util.zip.ZipEntry e = en.nextElement();
+                String name = e.getName();
+                if (e.isDirectory()) continue;
+                boolean skip = false;
+                for (String p : SKIP) if (name.startsWith(p)) { skip = true; break; }
+                if (skip) continue;
+                zo.putNextEntry(new java.util.zip.ZipEntry(name));
+                if (name.startsWith("xl/worksheets/sheet") && e.getSize() > 8_000_000L) {
+                    zo.write(TOO_BIG_SHEET.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                } else {
+                    try (InputStream in = zf.getInputStream(e)) {
+                        int n;
+                        while ((n = in.read(buf)) > 0) zo.write(buf, 0, n);
+                    }
+                }
+                zo.closeEntry();
+            }
+        }
+    }
+
+    private static void copyFile(File src, File dst) throws Exception {
+        try (InputStream in = new FileInputStream(src); FileOutputStream out = new FileOutputStream(dst)) {
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        }
     }
 
     private String queryName(Uri uri) {

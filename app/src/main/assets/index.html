@@ -122,6 +122,11 @@
 
   window.openFile = function () { if (hasAndroid) Android.openPicker(); };
 
+  // большой файл: пока приложение его облегчает, показываем надпись
+  window.onLoading = function () {
+    wrap.innerHTML = '<div id="empty">Открываю файл…</div>';
+  };
+
   window.onFileReady = function () {
     if (!hasAndroid) return;
     var b64 = Android.getFile();
@@ -229,12 +234,13 @@
     if (!ws || !ws['!ref']) return '<div id="empty">Лист пустой</div>';
     var R = XLSX.utils.decode_range(ws['!ref']);
     var cols = ws['!cols'] || [], rows = ws['!rows'] || [];
-    var minR = Infinity, maxR = -1, minC = Infinity, maxC = -1, r, c;
+    var minR = Infinity, maxR = -1, minC = Infinity, maxC = -1, r, c, filled = {};
 
     // границы по реально заполненным ячейкам
     for (r = R.s.r; r <= R.e.r; r++) for (c = R.s.c; c <= R.e.c; c++) {
       var cell = ws[XLSX.utils.encode_cell({ r: r, c: c })];
       if (cell && cellText(cell) !== '') {
+        filled[r] = true;
         if (r < minR) minR = r; if (r > maxR) maxR = r;
         if (c < minC) minC = c; if (c > maxC) maxC = c;
       }
@@ -244,6 +250,13 @@
     var visC = [], visR = [];
     for (c = minC; c <= maxC; c++) if (!(cols[c] && cols[c].hidden)) visC.push(c);
     for (r = minR; r <= maxR; r++) if (!(rows[r] && rows[r].hidden)) visR.push(r);
+    // длинные пустые промежутки не показываем (бывает случайная ячейка за тысячи строк ниже)
+    var vr = [], gap = [];
+    visR.forEach(function (rr) {
+      if (filled[rr]) { if (gap.length <= 20) vr = vr.concat(gap); gap = []; vr.push(rr); }
+      else gap.push(rr);
+    });
+    visR = vr;
 
     // объединённые ячейки
     var mergeStart = {}, covered = {};
@@ -408,6 +421,9 @@
     holder.innerHTML = html;
     document.body.appendChild(holder);
     var tbl = holder.querySelector('table');
+    // на картинку — только сам отчёт: всё ниже первой строки «Общий итог» (данные для графиков и т.п.) отрезаем
+    var tot = tbl.querySelector('tr.total');
+    if (tot) while (tot.nextSibling) tot.parentNode.removeChild(tot.nextSibling);
     var st = tbl.querySelectorAll('.stk');
     for (var i = 0; i < st.length; i++) st[i].classList.remove('stk');
 
