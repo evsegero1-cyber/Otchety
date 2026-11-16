@@ -82,6 +82,11 @@
   .pvrow.last { margin-top: 10px; }
   .cap { flex: 1; font-size: 15px; font-weight: 600; color: #222; }
   .send { flex: none; border: 0; border-radius: 10px; padding: 12px 20px; font-size: 16px; font-weight: 700; background: #1E7145; color: #fff; }
+  /* таблица для отправляемой картинки */
+  table.fit { table-layout: auto; }
+  table.fit tr { height: auto; }
+  table.fit td { white-space: normal; max-width: 78px; overflow-wrap: anywhere; line-height: 1.15; height: auto; }
+  table.fit td.nw, table.fit td.n { white-space: nowrap; max-width: none; }
 </style>
 </head>
 <body>
@@ -424,8 +429,29 @@
     // на картинку — только сам отчёт: всё ниже первой строки «Общий итог» (данные для графиков и т.п.) отрезаем
     var tot = tbl.querySelector('tr.total');
     if (tot) while (tot.nextSibling) tot.parentNode.removeChild(tot.nextSibling);
-    var st = tbl.querySelectorAll('.stk');
-    for (var i = 0; i < st.length; i++) st[i].classList.remove('stk');
+    // и всё, что выше строки с заголовком «ФИО» (фильтры Неделя/Месяц/Склад…), сборщикам не нужно
+    var st = tbl.querySelectorAll('.stk'), head = null;
+    for (var i = 0; i < st.length; i++) {
+      if (!head && /^\s*фио\s*$/i.test(st[i].textContent)) head = st[i].parentNode;
+      st[i].classList.remove('stk'); st[i].classList.add('nw');
+    }
+    if (head) while (head.previousSibling) head.parentNode.removeChild(head.previousSibling);
+    // столбцы — по ширине содержимого, длинные заголовки переносятся на несколько строк
+    var cg = tbl.querySelector('colgroup');
+    if (cg) cg.parentNode.removeChild(cg);
+    tbl.classList.add('fit');
+    // ячейка с длинным словом становится шире ровно настолько, чтобы слово влезло целиком
+    var mctx = document.createElement('canvas').getContext('2d');
+    var tds = tbl.querySelectorAll('td');
+    for (var m = 0; m < tds.length; m++) {
+      var c0 = tds[m], txt = c0.textContent;
+      if (!txt || c0.classList.contains('nw') || c0.classList.contains('n')) continue;
+      var cs0 = getComputedStyle(c0), lw = 0;
+      mctx.font = cs0.fontWeight + ' ' + cs0.fontSize + ' ' + cs0.fontFamily;
+      txt.split(/\s+/).forEach(function (wd) { lw = Math.max(lw, mctx.measureText(wd).width); });
+      var need = Math.ceil(lw + parseFloat(cs0.paddingLeft) + parseFloat(cs0.paddingRight) + 2);
+      if (need > 78) c0.style.maxWidth = need + 'px';
+    }
 
     var tr = tbl.getBoundingClientRect();
     var pad = 8, W = Math.ceil(tr.width) + pad * 2, H = Math.ceil(tr.height) + pad * 2;
@@ -435,6 +461,16 @@
     var aspect = (sw && sh) ? Math.max(sw, sh) / Math.min(sw, sh) : 2.2;
     var FW = 2560, FH = Math.round(FW / aspect);
     var k = Math.min(FW / W, FH / H);
+    // если по высоте осталось место — растягиваем строки, чтобы таблица заняла весь кадр
+    var rowsEl = tbl.rows, spare = FH / k - H;
+    if (spare > 2 && rowsEl.length) {
+      var add = spare / rowsEl.length, hs = [];
+      for (var q = 0; q < rowsEl.length; q++) hs.push(rowsEl[q].getBoundingClientRect().height);
+      for (q = 0; q < rowsEl.length; q++) rowsEl[q].style.height = (hs[q] + add) + 'px';
+      tr = tbl.getBoundingClientRect();
+      W = Math.ceil(tr.width) + pad * 2; H = Math.ceil(tr.height) + pad * 2;
+      k = Math.min(FW / W, FH / H);
+    }
     var cv = document.createElement('canvas');
     cv.width = FW; cv.height = FH;
     var ctx = cv.getContext('2d');
@@ -456,9 +492,29 @@
       ctx.fillStyle = cs.color;
       ctx.font = cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
       var al = cs.textAlign, px = parseFloat(cs.paddingLeft) || 4;
-      if (al === 'right') { ctx.textAlign = 'right'; ctx.fillText(text, x + w - px, y + h / 2); }
-      else if (al === 'center') { ctx.textAlign = 'center'; ctx.fillText(text, x + w / 2, y + h / 2); }
-      else { ctx.textAlign = 'left'; ctx.fillText(text, x + px, y + h / 2); }
+      // перенос длинного текста по словам (как в ячейке)
+      var lines = [text];
+      if (cs.whiteSpace !== 'nowrap' && ctx.measureText(text).width > w - 2 * px) {
+        lines = []; var cur = '';
+        var room = w - 2 * px, words = text.split(/\s+/), longest = 0;
+        // слово длиннее ячейки («производительность») не рвём — чуть уменьшаем шрифт этой ячейки
+        words.forEach(function (wd) { longest = Math.max(longest, ctx.measureText(wd).width); });
+        if (longest > room) {
+          ctx.font = cs.fontWeight + ' ' + (parseFloat(cs.fontSize) * room / longest) + 'px ' + cs.fontFamily;
+        }
+        words.forEach(function (wd) {
+          var t = cur ? cur + ' ' + wd : wd;
+          if (cur && ctx.measureText(t).width > room) { lines.push(cur); cur = wd; } else cur = t;
+        });
+        if (cur) lines.push(cur);
+      }
+      var lh = parseFloat(cs.fontSize) * 1.15, y0 = y + h / 2 - (lines.length - 1) * lh / 2;
+      lines.forEach(function (ln, li) {
+        var yy = y0 + li * lh;
+        if (al === 'right') { ctx.textAlign = 'right'; ctx.fillText(ln, x + w - px, yy); }
+        else if (al === 'center') { ctx.textAlign = 'center'; ctx.fillText(ln, x + w / 2, yy); }
+        else { ctx.textAlign = 'left'; ctx.fillText(ln, x + px, yy); }
+      });
       ctx.restore();
     }
     document.body.removeChild(holder);
