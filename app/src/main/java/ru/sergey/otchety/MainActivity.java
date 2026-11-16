@@ -45,6 +45,16 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("otchety", MODE_PRIVATE);
 
+        // При обычном запуске с иконки старый файл не открываем — удаляем его.
+        // Файл открывается только когда его выбрали (из почты, загрузок, «Поделиться» или кнопкой «Открыть»).
+        Intent start = getIntent();
+        String act = start != null ? start.getAction() : null;
+        if (!Intent.ACTION_VIEW.equals(act) && !Intent.ACTION_SEND.equals(act)) {
+            //noinspection ResultOfMethodCallIgnored
+            new File(getFilesDir(), LAST_FILE).delete();
+            prefs.edit().remove("name").apply();
+        }
+
         web = new WebView(this);
         setContentView(web);
 
